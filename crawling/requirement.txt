@@ -1,0 +1,12 @@
+selenium
+numpy
+transformers
+kss
+sentencepiece
+protobuf
+torch
+webdriver-manager
+
+fastapi
+uvicorn[standard]
+pydantic
