@@ -11,7 +11,9 @@ import numpy as np
 from transformers import AutoTokenizer, AutoModel
 import kss
 
-# source, externalid 이 부분 채우기
+SOURCE = "YOZM_IT" 
+BASE_URL = "https://yozm.wishket.com"
+
 
 MODEL_NAME = "skt/kobert-base-v1"
 device = torch.device("cpu")
@@ -159,7 +161,7 @@ def crawl_news():
             ".//a[@data-testid='contentsItem-item-link']"
         )
         href = link_el.get_attribute("href")
-
+        article_id = href.rstrip("/").split("/")[-1]
         thumbnail_url = None
         try:
             # column 스타일 카드에 해당
@@ -180,6 +182,8 @@ def crawl_news():
                 thumbnail_url = None  # 정말 없으면 None
 
         results.append({
+            "source": SOURCE,
+            "externalId": article_id,
             "title": title,
             "date": date_text,
             "url": href,
@@ -192,7 +196,7 @@ def crawl_news():
     detail_results = []
 
     for item in results:   # list_results는 앞에서 모아둔 {link, thumbnail, ...}
-        driver.get(item["link"])
+        driver.get(item["url"])
         def parse_article_detail(driver, timeout=15):
             data = {}
             local_wait = WebDriverWait(driver, timeout)
@@ -269,32 +273,37 @@ def crawl_news():
         try:
             article_data = parse_article_detail(driver, timeout=15)
         except TimeoutException:
-            print("[WARN] 본문 로딩 실패, 스킵:", item["link"])
+            print("[WARN] 본문 로딩 실패, 스킵:", item["url"])
             continue
         except Exception as e:
-            print("[ERROR] 예기치 못한 에러, 스킵:", item["link"], e)
+            print("[ERROR] 예기치 못한 에러, 스킵:", item["url"], e)
             continue
 
         detail_results.append({
-            "url": item["link"],
+            "source": item["source"],                     
+            "externalId": item["externalId"], 
             "title": article_data["title"],
+            "content_raw": article_data["content_raw"],
+            "url": item["url"],
             "reporter": article_data["author"],
             "publishedDate": article_data["posted_at"],
             "category": article_data["category"],
-            "content": article_data["content_raw"],  # 나중에 요약 모델에 넣을 원문
-            "thumbnailUrl": item["thumbnail_url"],
-            "provider" : item["provider"]
+            "provider" : item["provider"], 
+            "thumbnailUrl": item["thumbnail_url"]
+            
         })
     driver.quit()
 
     # KoBERT 요약
     for article in detail_results:
-        text = article.get("content", "")
+        text = article.get("content_raw", "")
         if not text:
-            article["summary"] = ""
+            article["content"] = ""
+            article.pop("content_raw", None)
             continue
         summary, _ = summarize_kobert(text, top_k=7)
-        article["summary"] = summary
+        article["content"] = summary
+        article.pop("content_raw", None)
 
     return detail_results
 
