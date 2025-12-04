@@ -161,23 +161,8 @@ def crawl_jobs():
         # 2) 클릭 가능한 부모(label/li)를 클릭
         #   상황에 따라 span 자체가 클릭 가능하면 그냥 span.click()도 됨
         driver.execute_script("arguments[0].click();", span)
+        
 
-        if old_first_card is None:
-            try:
-                old_first_cards = WebDriverWait(driver, 20).until(
-                    EC.presence_of_all_elements_located(
-                        (By.CSS_SELECTOR, "#TopHeadlineAGI ul.listBanner.listBanner_3xn:not(.listMajor) > li.devloopArea")
-                    )
-                )
-                old_first_li = old_first_cards[0]
-                old_first_info = old_first_li.get_attribute("data-info")
-            except TimeoutException:
-                print(f"[WARN] 초기 공고 카드를 찾지 못했어요. role={role}")
-                print("현재 URL:", driver.current_url)
-                # 필요하면 페이지 소스도 덤프해서 HTML 분석
-                with open("debug_page.html", "w", encoding="utf-8") as f:
-                    f.write(driver.page_source)
-                continue  # 다음 role로 넘어가기
             
         #3. "선택된 조건 검색하기" 버튼이 클릭 가능할 때까지 기다렸다가 클릭
         time.sleep(0.8)
@@ -199,13 +184,6 @@ def crawl_jobs():
                     time.sleep(1)
                     continue
 
-                first_li = job_cards[0]
-                first_info = first_li.get_attribute("data-info")
-
-                # 이전과 다르면 → 새로 로딩된 결과라고 보고 break
-                if (old_first_info is None) or (first_info != old_first_info):
-                    old_first_info = first_info
-                    break
 
                 # 아직도 이전이랑 같으면 조금 기다렸다가 다시 시도
                 time.sleep(1)
@@ -365,6 +343,8 @@ def crawl_jobs():
 
         filtered_results.append(
             {
+            "source" : "jobkorea",
+            "externalid":None,
             "title" :r["title"],
             "companyName" : r["companyName"],
             "content" :None,
@@ -377,6 +357,10 @@ def crawl_jobs():
             "expLevel" : r["expLevel"],
             "thumbnailUrl" : r["thumbnailUrl"]
                             })
+    
+    for idx, item in enumerate(filtered_results,start=1):
+        item["externalid"]= f"{idx:03d}"
+
     driver.quit()
     return filtered_results
 
