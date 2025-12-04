@@ -10,14 +10,20 @@ import torch
 import numpy as np
 from transformers import AutoTokenizer, AutoModel
 import kss
+import requests
+from bs4 import BeautifulSoup
+from datetime import date, timedelta,datetime
+
 
 SOURCE = "YOZM_IT" 
 BASE_URL = "https://yozm.wishket.com"
 
-
 MODEL_NAME = "skt/kobert-base-v1"
 device = torch.device("cpu")
-
+yesterday = date.today() - timedelta(days=1)
+yesterday_format = yesterday.strftime("%Y.%m.%d")
+today = date.today() 
+today_format = today.strftime("%Y.%m.%d")
 
 # 1) 모델 & 토크나이저 로드
 print("▶ KoBERT 모델 로드 중...")
@@ -139,10 +145,11 @@ def crawl_news():
 
     for art in articles:
         try:
+
             # 이 article 안에 '1일 전'이 있는지 확인
             date_el = art.find_element(
                 By.XPATH,
-                ".//span[contains(normalize-space(.), '1일 전')]"
+                ".//span[contains(normalize-space(.), '1일 전') or contains(normalize-space(.), '시간 전')]"
             )
         except:
             # 이 카드에는 '1일 전'이 없음 → 스킵
@@ -221,9 +228,13 @@ def crawl_news():
             # <span class="... typo-body2 ...">1일 전</span>
             date_el = driver.find_element(
                 By.XPATH,
-                "//span[contains(@class, 'typo-body2') and contains(normalize-space(.), '일 전')]"
+                "//span[contains(@class, 'typo-body2') and (contains(normalize-space(.), '1일 전') or contains(normalize-space(.), '시간 전'))]"
             )
-            data["posted_at"] = date_el.text.strip()   # 예: '1일 전'
+            a = date_el.text.strip()
+            if a == '1일 전':
+                data["posted_at"] = yesterday_format  # 예: '1일 전'
+            else:
+                data["posted_at"] = today_format
 
             # 4) 카테고리
             # <a data-testid="category-link" ...><span ...>개발</span></a>
@@ -280,37 +291,178 @@ def crawl_news():
             continue
 
         detail_results.append({
-            "source": item["source"],                     
-            "externalId": item["externalId"], 
-            "title": article_data["title"],
-            "content_raw": article_data["content_raw"],
+            "source" : item["source"],
+            "externalId":item["externalId"],
             "url": item["url"],
+            "title": article_data["title"],
             "reporter": article_data["author"],
             "publishedDate": article_data["posted_at"],
             "category": article_data["category"],
-            "provider" : item["provider"], 
-            "thumbnailUrl": item["thumbnail_url"]
-            
+            "content": article_data["content_raw"],  # 나중에 요약 모델에 넣을 원문
+            "thumbnailUrl": item["thumbnail_url"],
+            "provider" : item["provider"]
         })
     driver.quit()
 
+
     # KoBERT 요약
     for article in detail_results:
-        text = article.get("content_raw", "")
+        text = article.get("content", "")
         if not text:
             article["content"] = ""
-            article.pop("content_raw", None)
             continue
         summary, _ = summarize_kobert(text, top_k=7)
         article["content"] = summary
-        article.pop("content_raw", None)
+
 
     return detail_results
 
 
+
+
+'''
+def crawl_woowahan():
+    SOURCE = "WOOWATECH" 
+    url = 'https://techblog.woowahan.com/'
+    HEADERS = {"User-Agent": "Mozilla/5.0"}
+    provider = "woowahan"
+
+    def parse_post_date(text: str) -> date:
+        text = text.strip()
+        # 기본 형식: Dec.02.2025
+        return datetime.strptime(text, "%b.%d.%Y").date()
+    # ───────── 개별 기사 페이지 파싱 함수 ─────────
+    def parse_article(url: str) -> dict:
+        """
+        글 상세 페이지에 들어가서 추가 정보(본문, 태그 등)를 뽑는 예시.
+        CSS selector는 실제 페이지 구조에 맞게 조정해야 함!
+        """
+        res = requests.get(url, headers=HEADERS)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        # 1) 본문 내용 추출 (예시 selector)
+        #   - 실제로는 F12로 보고 class 이름 확인해서 고쳐줘야 함
+        content_el = (
+            soup.select_one("div.post-content") or
+            soup.select_one("div.entry-content") or
+            soup.select_one("article")
+        )
+        content_text = content_el.get_text("\n", strip=True) if content_el else ""
+        # 1) 작성자 + 상세 날짜
+        author = None
+        detail_date_raw = None
+        detail_date = None
+
+        author_box = soup.select_one("div.post-header-author")
+        if author_box:
+            span_texts = [
+                s.get_text(strip=True)
+                for s in author_box.find_all("span")
+                if s.get_text(strip=True)
+            ]
+            if len(span_texts) >= 1:
+                detail_date_raw = span_texts[0]
+            if len(span_texts) >= 2:
+                author = span_texts[1]
+
+            # 날짜를 date 객체로 파싱 (실패하면 그냥 raw만 둠)
+            if detail_date_raw:
+                try:
+                    detail_date = datetime.strptime(detail_date_raw, "%Y. %m. %d.").date()
+                except ValueError:
+                    detail_date = None
+        category = None
+        category_slug = None
+        cat_el = soup.select_one("p.post-header-categories a.cat-tag")
+        if cat_el:
+            category = cat_el.get_text(strip=True)       # 예: "Infra"
+            category_slug = cat_el.get("data-slug")      # 예: "infra"     
+ 
+
+        return {
+            "source" : SOURCE,
+            "content": content_text,
+            "author": author,
+            "category": category,
+            # "tags": tags,  # 필요하면 주석 해제 + 위 코드 활성화
+        }
+    
+    # 1) 어제 날짜 문자열 만들기
+    yesterday = date.today() - timedelta(days=1)# 수정사항!! 
+    #print(yesterday)
+    
+    #target_date_str = yesterday.strftime("%Y. %m. %d.")  # "2025. 12. 02." 형태
+    target_date_str=str(yesterday)
+    #print(type(yesterday))
+    res = requests.get(url, headers=HEADERS)
+    res.raise_for_status()
+
+    soup = BeautifulSoup(res.text, "html.parser")
+
+    posts = []
+
+    # 2) 모든 게시글 카드 찾기
+    for item in soup.select("div.post-item"):
+        time_tag = item.select_one("time.post-author-date")
+        if not time_tag:
+            continue
+
+        # ex) "2025. 12. 02."
+        date_text = time_tag.get_text(strip=True)
+        if len(date_text) == 0:
+            continue
+        #print(date_text)
+        post_date = str(parse_post_date(date_text))
+        # 3) 날짜가 어제와 같은 카드만 통과
+
+        if post_date != target_date_str:
+            #print(f"post : {post_date}")
+            #print(f"target :{target_date_str}")
+            continue
+
+
+        # 4) 제목과 링크 추출
+        title_tag = item.select_one("h2.post-title")
+
+        if not title_tag:
+            continue
+
+        title = title_tag.get_text(strip=True)
+
+
+        # 제목을 감싸고 있는 <a> (기사 링크)
+        link_tag = title_tag.find_parent("a")
+        if not link_tag:
+            continue
+
+        url = link_tag["href"]
+
+        article_info = parse_article(url) 
+        #print(article_info)
+
+        summary, summary_sents = summarize_kobert(article_info["content"], top_k=7)
+        posts.append({
+            "source" : SOURCE,
+            "externalid": None,
+            "provider" : provider,
+            "publishedDate": yesterday,
+            "title": title,
+            "url": url,
+            "category": article_info["category"],
+            "content": summary,#summary,
+            "reporter": article_info["author"],
+            "thumbnailUrl": None, 
+        })
+
+    return posts
+'''
+
 if __name__ == "__main__":
     data = crawl_news()
-    df = pd.DataFrame(data)
+    # data2 = crawl_woowahan()
+    data_f = data # +data2
+    df = pd.DataFrame(data_f)
     df.to_json(
         "news_output.json",
         orient="records",

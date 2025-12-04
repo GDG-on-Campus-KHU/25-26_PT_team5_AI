@@ -4,8 +4,8 @@ from typing import List
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from jobs_crawler import crawl_jobs
-from news_crawler import crawl_news
+from .jobs_crawler import crawl_jobs
+from .news_crawler import crawl_news
 
 
 # === DTO 모델 (자바 record와 필드명/케이스 맞추기) ===
@@ -14,25 +14,25 @@ class CrawledJobsDto(BaseModel):
     source: str
     externalId: str | None = None
     title: str | None = None
-    company_name: str | None = None
+    companyName: str | None = None
     content: str | None = None
     url: str | None = None
-    posted_at: str | None = None
+    postedDate: str | None = None
     deadLine: str | None = None
     category: str | None = None
-    tech_stack: str | None = None
+    techStack: str | None = None
     location: str | None = None
-    exp_level: str | None = None
-    thumbnail_url: str | None = None
+    expLevel: str | None = None
+    thumbnailUrl: str | None = None
 
 
 class CrawledNewsDto(BaseModel):
     source: str
     externalId: str | None = None
     title: str | None = None
-    content: str | None = None
     url: str | None = None
-    published_at: str | None = None
+    content: str | None = None
+    publishedDate: str | None = None
     category: str | None = None
     reporter: str | None = None
     provider: str | None = None
