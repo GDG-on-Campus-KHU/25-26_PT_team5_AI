@@ -4,8 +4,8 @@ from typing import List
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from .jobs_crawler import crawl_jobs
-from .news_crawler import crawl_news
+from jobs_crawler import crawl_jobs
+from news_crawler import crawl_news
 
 
 # === DTO 모델 (자바 record와 필드명/케이스 맞추기) ===

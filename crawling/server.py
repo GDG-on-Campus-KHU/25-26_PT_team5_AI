@@ -23,4 +23,4 @@ def api_news():
 
 if __name__ == "__main__":
     # 0.0.0.0 으로 열면 외부(같은 LAN, Docker 등)에서도 접속 가능
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=8000, debug=False)
